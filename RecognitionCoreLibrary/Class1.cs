@@ -21,7 +21,7 @@ namespace RecognitionCoreLibrary
 
         static readonly string[] classesNames = new string[] { "person", "bicycle", "car", "motorbike", "aeroplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "sofa", "pottedplant", "bed", "diningtable", "toilet", "tvmonitor", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush" };
 
-        static public ConcurrentDictionary<string, IReadOnlyList<YoloV4Result>> Recognise(string imageFolder)
+        public static void Recognise(string imageFolder, ConcurrentQueue<Tuple<string, IReadOnlyList<YoloV4Result>>> recognitionResult, CancellationToken token)
         {
             //Directory.CreateDirectory(imageOutputFolder);
             MLContext mlContext = new MLContext();
@@ -51,7 +51,6 @@ namespace RecognitionCoreLibrary
 
             var model = pipeline.Fit(mlContext.Data.LoadFromEnumerable(new List<YoloV4BitmapData>()));
 
-            var recognitionResult = new ConcurrentDictionary<string, IReadOnlyList<YoloV4Result>>();
             var filenames = Directory.GetFiles(imageFolder, "*", SearchOption.TopDirectoryOnly).Select(path => Path.GetFileName(path)).ToArray();
             int n = filenames.Length;
 
@@ -61,27 +60,26 @@ namespace RecognitionCoreLibrary
                 predictionEngines = predictionEngines.Add(mlContext.Model.CreatePredictionEngine<YoloV4BitmapData, YoloV4Prediction>(model));
             }
 
-            var cts = new CancellationTokenSource();
-
             var tasks = new Task[n];
-
             for (int i = 0; i < n; ++i)
             {
-                tasks[i] = Task.Factory.StartNew(pi =>
+                tasks[i] = Task<bool>.Factory.StartNew(pi =>
                 {
                     int i = (int)pi;
-                    if (cts.IsCancellationRequested)
+                    if (token.IsCancellationRequested)
                     {
-                        Console.WriteLine($"Task {i} was betrayed!!!");
+                        Console.WriteLine($"Task {i} was cancelled!");
+                        return true;
                     }
                     var bitmap = new Bitmap(Image.FromFile(Path.Combine(imageFolder, filenames[i])));
                     var predict = predictionEngines[i].Predict(new YoloV4BitmapData() { Image = bitmap });
                     var results = predict.GetResults(classesNames, 0.3f, 0.7f);
-                    recognitionResult.GetOrAdd(filenames[i], results);
-                }, i, cts.Token);
+                    var tuple = Tuple.Create(filenames[i], results);
+                    recognitionResult.Enqueue(tuple);
+                    return true;
+                }, i);
             }
             Task.WaitAll(tasks);
-            return recognitionResult;
         }
     }
 }
