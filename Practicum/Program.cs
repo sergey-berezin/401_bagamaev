@@ -14,7 +14,6 @@ namespace Practicum
         {
             Console.WriteLine("Enter the full path of the directory:");
             string dirPath = Console.ReadLine();
-            bool flag = true;
             var recognitionResult = new ConcurrentQueue<Tuple<string, IReadOnlyList<YoloV4Result>>>();
 
             var source = new CancellationTokenSource();
@@ -30,12 +29,11 @@ namespace Practicum
                     Console.WriteLine("\nTask cancellation requested");
                 }
 
-            });
-
-            var task1 = Task.Factory.StartNew(() => RecognitionCore.Recognise(dirPath, recognitionResult, token));
+            }, TaskCreationOptions.LongRunning);
+            var task1 = Task.Factory.StartNew(() => RecognitionCore.Recognise(dirPath, recognitionResult, token), TaskCreationOptions.LongRunning);
             var task2 = Task.Factory.StartNew(() =>
             {
-                while (flag)
+                while (task1.Status == TaskStatus.Running)
                 {
                     while(recognitionResult.TryDequeue(out Tuple<string, IReadOnlyList<YoloV4Result>> result))
                     {
@@ -51,9 +49,7 @@ namespace Practicum
                     }    
                 }
             });
-            Task.WaitAll(task1);
-            flag = false; // Есть ли нормальный способ закончить проверку очереди на наличие элементов после того, как функция Recognise завершила работу?
-            Task.WaitAll(task2);
+            Task.WaitAll(task1, task2);
         }
     }
 }
