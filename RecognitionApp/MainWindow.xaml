@@ -12,7 +12,7 @@
             <Button Content="Start" Click="Button_Start"/>
             <Button Content="Stop" Click="Button_Stop"/>
         </ToolBar>
-        <ListBox Name="listBox_Images" Margin="10, 70, 10, 10" ItemsSource="{Binding}">
+        <ListBox Name="listBox_Images" Margin="10, 70, 10, 10">
             <ListBox.ItemsPanel>
                 <ItemsPanelTemplate>
                     <StackPanel Orientation="Horizontal"/>

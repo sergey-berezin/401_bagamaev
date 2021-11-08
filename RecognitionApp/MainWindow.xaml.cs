@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using System.Windows.Interop;
 using System.Drawing.Imaging;
 using System.Collections.ObjectModel;
+using System.Collections.Immutable;
 
 namespace RecognitionApp
 {
@@ -22,12 +23,11 @@ namespace RecognitionApp
     /// </summary>
     public partial class MainWindow : Window
     {
-        static CancellationTokenSource source = new CancellationTokenSource();
-        static CancellationToken token = source.Token;
-
-        List<BitmapImage> items = new List<BitmapImage>();
-        string imageFolder = "";
-        string[] filenames = new string[0];
+        static readonly CancellationTokenSource source = new CancellationTokenSource();
+        static readonly CancellationToken token = source.Token;
+        private ImmutableList<BitmapImage> im_items;
+        private string imageFolder = "";
+        private string[] filenames = new string[0];
 
         public MainWindow()
         {
@@ -52,24 +52,22 @@ namespace RecognitionApp
 
         private void Button_Open(object sender, RoutedEventArgs e)
         {
-            // При повторном открытии директории программа не работает, так как Listbox не обновляется. Можно ли это как-нибудь исправить? Я практически уверен, что выбрал нелучший способ привязки
-            // и обновления Listbox, но с другими способами ничего не работало.
-            var dlg = new CommonOpenFileDialog();
-            dlg.InitialDirectory = "C:\\Users\\murad\\Desktop";
-            dlg.IsFolderPicker = true;
+            var dlg = new CommonOpenFileDialog
+            {
+                InitialDirectory = "C:\\Users\\murad\\Desktop",
+                IsFolderPicker = true
+            };
             if (dlg.ShowDialog() == CommonFileDialogResult.Ok)
             {
-                items.Clear();
-                listBox_Images.Items.Refresh();
+                im_items = ImmutableList.Create<BitmapImage>();
                 var filepaths = Directory.GetFiles(dlg.FileName, "*", SearchOption.TopDirectoryOnly).ToArray();
                 filenames = filepaths.Select(path => Path.GetFileName(path)).ToArray();
                 int n = filepaths.Length;
-                listBox_Images.ItemsSource = items;
                 for (int i = 0; i < n; ++i)
                 {
-                    items.Add(new BitmapImage(new Uri(filepaths[i])));
+                    im_items = im_items.Add(new BitmapImage(new Uri(filepaths[i])));
                 }
-                listBox_Images.Items.Refresh();
+                listBox_Images.ItemsSource = im_items;
 
                 imageFolder = dlg.FileName;
             }
@@ -109,14 +107,16 @@ namespace RecognitionApp
                             g.DrawString(res.Label, new Font("Arial", 12),
                                          Brushes.Blue, new PointF(x1, y1));
                         }
-                        items[Array.FindIndex(filenames, val => val.Equals(name))] = Bitmap2BitmapImage(bitmap);
+                        int ind = Array.FindIndex(filenames, val => val.Equals(name));
+                        im_items = im_items.RemoveAt(ind);
+                        im_items = im_items.Insert(ind, Bitmap2BitmapImage(bitmap));
                         this.Dispatcher.BeginInvoke(new Action(() =>
                         {
-                            listBox_Images.Items.Refresh();
+                            listBox_Images.ItemsSource = im_items;
                         }));
                     }
                 }
-            });
+            }, TaskCreationOptions.LongRunning);
             await Task.WhenAll(task1, task2);
         }
     }
