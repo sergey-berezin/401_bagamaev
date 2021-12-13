@@ -20,11 +20,12 @@ namespace Server.Controllers
     public class ServerController : ControllerBase
     {
         private ImageStoreContext db;
-        private CancellationTokenSource source = new CancellationTokenSource();
+        private CancellationTokenSource source;
 
-        public ServerController(ImageStoreContext dB)
+        public ServerController(ImageStoreContext dB, CancellationTokenSource Source)
         {
             this.db = dB;
+            this.source = Source;
         }
         private byte[] ImageToByteArray(Image img)
         {

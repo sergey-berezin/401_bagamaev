@@ -32,16 +32,23 @@ namespace RecognitionApp
 
         private async void ShowDBContent()
         {
-            string result = await client.GetStringAsync("https://localhost:5001/get-images");
-            var images = JsonConvert.DeserializeObject<List<ProcessedImage>>(result);
-            listView_Images.ItemsSource = images;
-
-            var objectList = new List<RecognizedObject>();
-            foreach (var img in images)
+            try
             {
-                objectList.AddRange(img.Objects);
+                string result = await client.GetStringAsync("https://localhost:5001/get-images");
+                var images = JsonConvert.DeserializeObject<List<ProcessedImage>>(result);
+                listView_Images.ItemsSource = images;
+
+                var objectList = new List<RecognizedObject>();
+                foreach (var img in images)
+                {
+                    objectList.AddRange(img.Objects);
+                }
+                listView_Objects.ItemsSource = objectList;
             }
-            listView_Objects.ItemsSource = objectList;
+            catch (HttpRequestException ex)
+            {
+                MessageBox.Show(ex.Message, "Serever Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         public MainWindow()
@@ -115,24 +122,40 @@ namespace RecognitionApp
 
         private async void Button_Stop(object sender, RoutedEventArgs e)
         {
-            await client.GetAsync("https://localhost:5001/stop");
+            try
+            {
+                await client.GetAsync("https://localhost:5001/stop");
+            }
+            catch (HttpRequestException ex)
+            {
+                MessageBox.Show(ex.Message, "Serever Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private async void Button_Start(object sender, RoutedEventArgs e)
         {
             DisableAllButtons();
-            var response = await client.GetAsync("https://localhost:5001/detect?path=" + imageFolder);
-            var result = await response.Content.ReadAsStringAsync();
-            var images = JsonConvert.DeserializeObject<ImmutableList<RequestImage>>(result);
-            foreach(var image in images)
+            try
             {
-                string name = image.ImageClass;
-                int ind = Array.FindIndex(filenames, val => val.Equals(name));
-                im_items = im_items.RemoveAt(ind);
-                Bitmap bitmap = ByteArrayToImage(image.Bitmap);
-                im_items = im_items.Insert(ind, Bitmap2BitmapImage(bitmap));
-                listBox_Images.ItemsSource = im_items;
+                var response = await client.GetAsync("https://localhost:5001/detect?path=" + imageFolder);
+                var result = await response.Content.ReadAsStringAsync();
+                var images = JsonConvert.DeserializeObject<ImmutableList<RequestImage>>(result);
+
+                foreach (var image in images)
+                {
+                    string name = image.ImageClass;
+                    int ind = Array.FindIndex(filenames, val => val.Equals(name));
+                    im_items = im_items.RemoveAt(ind);
+                    Bitmap bitmap = ByteArrayToImage(image.Bitmap);
+                    im_items = im_items.Insert(ind, Bitmap2BitmapImage(bitmap));
+                    listBox_Images.ItemsSource = im_items;
+                }
             }
+            catch (HttpRequestException ex)
+            {
+                MessageBox.Show(ex.Message, "Serever Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+     
             ShowDBContent();
             EnableAllButtons();
         }
@@ -141,7 +164,14 @@ namespace RecognitionApp
         {
             DisableAllButtons();
 
-            await client.DeleteAsync("https://localhost:5001/clear");
+            try
+            {
+                await client.DeleteAsync("https://localhost:5001/clear");
+            }
+            catch (HttpRequestException ex)
+            {
+                MessageBox.Show(ex.Message, "Serever Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
 
             ShowDBContent();
             EnableAllButtons();

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using DatabaseManager;
 using Microsoft.AspNetCore.Builder;
@@ -19,6 +20,7 @@ namespace Server
         {
             services.AddControllers();
             services.AddSingleton<ImageStoreContext>(new ImageStoreContext());
+            services.AddSingleton<CancellationTokenSource>(new CancellationTokenSource());
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
