@@ -3,9 +3,6 @@ using System.Linq;
 using System.Windows;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using System.Drawing;
-using RecognitionCoreLibrary;
-using DatabaseManager;
-using YOLOv4MLNet.DataStructures;
 using System.Collections.Generic;
 using System.Windows.Media.Imaging;
 using System;
@@ -16,7 +13,9 @@ using System.Windows.Interop;
 using System.Drawing.Imaging;
 using System.Collections.ObjectModel;
 using System.Collections.Immutable;
-using Microsoft.EntityFrameworkCore;
+using System.Net.Http;
+using Contract;
+using Newtonsoft.Json;
 
 namespace RecognitionApp
 {
@@ -25,19 +24,20 @@ namespace RecognitionApp
     /// </summary>
     public partial class MainWindow : Window
     {
-        static readonly CancellationTokenSource source = new CancellationTokenSource();
-        static readonly CancellationToken token = source.Token;
+        private CancellationTokenSource source = new CancellationTokenSource();
         private ImmutableList<BitmapImage> im_items;
         private string imageFolder = "";
         private string[] filenames = new string[0];
-        ImageStoreContext db;
+        HttpClient client = new HttpClient();
 
-        private void ShowDBContent()
+        private async void ShowDBContent()
         {
-            listView_Images.ItemsSource = db.Images.ToList();
+            string result = await client.GetStringAsync("https://localhost:5001/get-images");
+            var images = JsonConvert.DeserializeObject<List<ProcessedImage>>(result);
+            listView_Images.ItemsSource = images;
 
             var objectList = new List<RecognizedObject>();
-            foreach (var img in db.Images)
+            foreach (var img in images)
             {
                 objectList.AddRange(img.Objects);
             }
@@ -47,9 +47,21 @@ namespace RecognitionApp
         public MainWindow()
         {
             InitializeComponent();
-            db = new ImageStoreContext();
-
             ShowDBContent();
+        }
+
+        private void DisableAllButtons()
+        {
+            Open_Button.IsEnabled = false;
+            Start_Button.IsEnabled = false;
+            Clear_Button.IsEnabled = false;
+        }
+
+        private void EnableAllButtons()
+        {
+            Open_Button.IsEnabled = true ;
+            Start_Button.IsEnabled = true;
+            Clear_Button.IsEnabled = true;
         }
 
         private BitmapImage Bitmap2BitmapImage(Bitmap bitmap)
@@ -68,12 +80,13 @@ namespace RecognitionApp
             return bitmapImage;
         }
 
-        private byte[] ImageToByteArray(Image img)
+        private Bitmap ByteArrayToImage(byte[] data)
         {
-            using (var stream = new MemoryStream())
+            Bitmap bmp;
+            using (var ms = new MemoryStream(data))
             {
-                img.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
-                return stream.ToArray();
+                bmp = new Bitmap(ms);
+                return bmp;
             }
         }
 
@@ -100,102 +113,38 @@ namespace RecognitionApp
             }
         }
 
-        private void Button_Stop(object sender, RoutedEventArgs e)
+        private async void Button_Stop(object sender, RoutedEventArgs e)
         {
-            source.Cancel();
+            await client.GetAsync("https://localhost:5001/stop");
         }
 
         private async void Button_Start(object sender, RoutedEventArgs e)
         {
-            Open_Button.IsEnabled = false;
-            Start_Button.IsEnabled = false;
-            Clear_Button.IsEnabled = false;
-            var recognitionResult = new ConcurrentQueue<Tuple<string, IReadOnlyList<YoloV4Result>>>();
-
-            var task1 = Task.Factory.StartNew(() => RecognitionCore.Recognise(imageFolder, recognitionResult, token), TaskCreationOptions.LongRunning);
-            var task2 = Task.Factory.StartNew(() =>
+            DisableAllButtons();
+            var response = await client.GetAsync("https://localhost:5001/detect?path=" + imageFolder);
+            var result = await response.Content.ReadAsStringAsync();
+            var images = JsonConvert.DeserializeObject<ImmutableList<RequestImage>>(result);
+            foreach(var image in images)
             {
-                while (task1.Status == TaskStatus.Running)
-                {
-                    while (recognitionResult.TryDequeue(out Tuple<string, IReadOnlyList<YoloV4Result>> result))
-                    {
-                        string name = result.Item1;
-                        var bitmap = new Bitmap(Image.FromFile(Path.Combine(imageFolder, name)));
-                        using var g = Graphics.FromImage(bitmap);
-                        // Create ProcessedImage object
-                        var currImage = new ProcessedImage
-                        {
-                            Objects = new List<RecognizedObject>()
-                        };
-                        foreach (var res in result.Item2)
-                        {
-                            var x1 = res.BBox[0];
-                            var y1 = res.BBox[1];
-                            var x2 = res.BBox[2];
-                            var y2 = res.BBox[3];
-                            g.DrawRectangle(Pens.Red, x1, y1, x2 - x1, y2 - y1);
-                            using (var brushes = new SolidBrush(Color.FromArgb(50, Color.Red)))
-                            {
-                                g.FillRectangle(brushes, x1, y1, x2 - x1, y2 - y1);
-                            }
-
-                            g.DrawString(res.Label, new Font("Arial", 12),
-                                            Brushes.Blue, new PointF(x1, y1));
-                            // Add recognized object to currImage
-                            currImage.Objects.Add(new RecognizedObject() { ClassName = res.Label, X1 = x1, Y1 = y1, X2 = x2, Y2 = y2 });
-                        }
-                        int ind = Array.FindIndex(filenames, val => val.Equals(name));
-                        im_items = im_items.RemoveAt(ind);
-                        im_items = im_items.Insert(ind, Bitmap2BitmapImage(bitmap));
-                        this.Dispatcher.BeginInvoke(new Action(() =>
-                        {
-                            listBox_Images.ItemsSource = im_items;
-                        }));
-                        // Fill BLOB and hash code in currImage
-                        currImage.ImageContent = ImageToByteArray(bitmap);
-                        currImage.ImageHashCode = db.GetHashCode(currImage);
-                        // Add currImage to DB
-                        bool inDB = false;
-                        foreach (var img in db.Images)
-                        {
-                            if (db.Equal(currImage, img))
-                            {
-                                inDB = true;
-                                break;
-                            }
-                        }
-                        if (!inDB)
-                        {
-                            db.Add(currImage);
-                            db.SaveChanges();
-                        }
-                    }
-                }
-            }, TaskCreationOptions.LongRunning);
-            await Task.WhenAll(task1, task2);
-
+                string name = image.ImageClass;
+                int ind = Array.FindIndex(filenames, val => val.Equals(name));
+                im_items = im_items.RemoveAt(ind);
+                Bitmap bitmap = ByteArrayToImage(image.Bitmap);
+                im_items = im_items.Insert(ind, Bitmap2BitmapImage(bitmap));
+                listBox_Images.ItemsSource = im_items;
+            }
             ShowDBContent();
-
-            Open_Button.IsEnabled = true;
-            Start_Button.IsEnabled = true;
-            Clear_Button.IsEnabled = true;
+            EnableAllButtons();
         }
 
-        private void Button_Clear(object sender, RoutedEventArgs e)
+        private async void Button_Clear(object sender, RoutedEventArgs e)
         {
-            Open_Button.IsEnabled = false;
-            Start_Button.IsEnabled = false;
-            Clear_Button.IsEnabled = false;
+            DisableAllButtons();
 
-            var images = db.Images.Include(e => e.Objects);
-            db.RemoveRange(images);
-            db.SaveChanges();
+            await client.DeleteAsync("https://localhost:5001/clear");
 
             ShowDBContent();
-
-            Open_Button.IsEnabled = true;
-            Start_Button.IsEnabled = true;
-            Clear_Button.IsEnabled = true;
+            EnableAllButtons();
         }
     }
 }
