@@ -13,11 +13,11 @@
     </PackageReference>
     <PackageReference Include="Microsoft.WindowsAPICodePack-Core" Version="1.1.0.2" />
     <PackageReference Include="Microsoft.WindowsAPICodePack-Shell" Version="1.1.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DatabaseManager\DatabaseManager.csproj" />
-    <ProjectReference Include="..\RecognitionCoreLibrary\RecognitionCoreLibrary.csproj" />
+    <ProjectReference Include="..\Contract\Contract.csproj" />
   </ItemGroup>
 
 </Project>

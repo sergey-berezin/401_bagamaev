@@ -1,29 +1,12 @@
 ﻿using System;
 using Microsoft.EntityFrameworkCore;
+using Contract;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
 namespace DatabaseManager
 {
-    public class ProcessedImage
-    {
-        public int ProcessedImageId { get; set; }
-        public byte[] ImageContent { get; set; }
-        public int ImageHashCode { get; set; }
-        virtual public ICollection<RecognizedObject> Objects { get; set; }
-    }
-    public class RecognizedObject
-    {
-        public int RecognizedObjectId { get; set; }
-        public float X1 { get; set; }
-        public float Y1 { get; set; }
-        public float X2 { get; set; }
-        public float Y2 { get; set; }
-        public string ClassName { get; set; }
-
-        public int ProcessedImageId { get; set; }
-    }
     public class ImageStoreContext : DbContext
     {
         public DbSet<ProcessedImage> Images { get; set; }
@@ -36,7 +19,7 @@ namespace DatabaseManager
         }
         protected override void OnConfiguring(DbContextOptionsBuilder o)
             => o.UseLazyLoadingProxies().UseSqlite($"Data Source={DbPath}");
-        public int GetHashCode(ProcessedImage img)
+        private int GetHashCode(ProcessedImage img)
         {
             int res = img.ImageContent[0];
             foreach (var b in img.ImageContent)
@@ -45,7 +28,7 @@ namespace DatabaseManager
             }
             return res;
         }
-        public bool Equal(ProcessedImage img1, ProcessedImage img2)
+        private bool Equal(ProcessedImage img1, ProcessedImage img2)
         {
             if (img1.ImageHashCode != img2.ImageHashCode)
                 return false;
@@ -61,6 +44,24 @@ namespace DatabaseManager
                     return false;
             }
             return true;
+        }
+        public void AddImage(ProcessedImage newImage)
+        {
+            newImage.ImageHashCode = GetHashCode(newImage);
+            bool inDB = false;
+            foreach (var image in Images)
+            {
+                if (Equal(newImage, image))
+                {
+                    inDB = true;
+                    break;
+                }
+            }
+            if (!inDB)
+            {
+                Add(newImage);
+                SaveChanges();
+            }
         }
     }
 }
